@@ -15,10 +15,6 @@ const emit = defineEmits<{
   startWriting: [];
   polish: [];
 }>();
-
-const showActions = computed(() => {
-  return ['RESEARCH', 'OUTLINE', 'PLAN', 'WRITING', 'POLISHING', 'COMPLETE'].includes(props.step);
-});
 </script>
 
 <template>

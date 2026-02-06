@@ -12,13 +12,13 @@ import ChatPanel from './components/ChatPanel.vue';
 import ActionToolbar from './components/ActionToolbar.vue';
 
 // Initialize composables
-const { resetAgents } = useAgents();
+const { agents, updateAgent, addWriterAgent, resetAgents } = useAgents();
 const { messages, isLoading, addUserMessage, addBotMessage, clearMessages, getHistoryContext } = useChat();
+
 const {
   step,
   topic,
   paper,
-  agents,
   performResearch,
   handleGenerateOutline,
   handleCreatePlan,
@@ -27,7 +27,7 @@ const {
   handleRefineOutline,
   handleEditPaper,
   resetWorkflow
-} = usePaperWorkflow();
+} = usePaperWorkflow(updateAgent, addWriterAgent, addBotMessage, getHistoryContext);
 
 // Layout state
 const leftPanelWidth = ref(35);

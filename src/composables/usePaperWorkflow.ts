@@ -1,5 +1,5 @@
 import { ref, reactive, watch } from 'vue';
-import type { PaperState, WorkflowStep, WritingTask, OutlineItem, Reference } from '../types';
+import type { PaperState, WorkflowStep, WritingTask, OutlineItem, Reference, Agent } from '../types';
 import {
   researchTopic,
   generateOutline,
@@ -8,13 +8,13 @@ import {
   writeSection,
   polishPaper
 } from '../services/geminiService';
-import { useAgents } from './useAgents';
-import { useChat } from './useChat';
 
-export function usePaperWorkflow() {
-  const { agents, updateAgent, addWriterAgent } = useAgents();
-  const { addBotMessage, getHistoryContext } = useChat();
-
+export function usePaperWorkflow(
+  updateAgent: (id: string, status: Agent['status'], action?: string) => void,
+  addWriterAgent: (id: string, name: string) => void,
+  addBotMessage: (text: string) => void,
+  getHistoryContext: (newMessage: string, maxMessages?: number) => string
+) {
   const step = ref<WorkflowStep>('INPUT');
   const isLoading = ref(false);
   const topic = ref('');
@@ -208,7 +208,6 @@ export function usePaperWorkflow() {
     isLoading,
     topic,
     paper,
-    agents,
 
     // Actions
     performResearch,
