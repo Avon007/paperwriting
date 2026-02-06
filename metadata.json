@@ -1,0 +1,5 @@
+{
+  "name": "ScholarGrid AI",
+  "description": "A multi-agent system for automated academic paper research, planning, writing, and polishing.",
+  "requestFramePermissions": []
+}
