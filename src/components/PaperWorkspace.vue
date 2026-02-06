@@ -20,7 +20,7 @@ const emit = defineEmits<{
 // Layout state
 const topSectionHeight = ref(45);
 const referencePanelWidth = ref(50);
-const { activeTarget, startResize, calculateNewValue } = useMultiResizable();
+const { activeTarget, startResize, stopResize, calculateNewValue } = useMultiResizable();
 
 // Template refs
 const containerRef = ref<HTMLDivElement | null>(null);
@@ -41,17 +41,28 @@ const onResize = (e: MouseEvent) => {
   }
 };
 
+// Stop resizing on mouse up or leaving window
+const onStopResize = () => {
+  stopResize();
+};
+
 // Listen to resize target changes
 watch(activeTarget, (newTarget) => {
   if (newTarget) {
     window.addEventListener('mousemove', onResize);
+    window.addEventListener('mouseup', onStopResize);
+    window.addEventListener('mouseleave', onStopResize);
   } else {
     window.removeEventListener('mousemove', onResize);
+    window.removeEventListener('mouseup', onStopResize);
+    window.removeEventListener('mouseleave', onStopResize);
   }
 });
 
 onUnmounted(() => {
   window.removeEventListener('mousemove', onResize);
+  window.removeEventListener('mouseup', onStopResize);
+  window.removeEventListener('mouseleave', onStopResize);
 });
 
 // Reference handlers
