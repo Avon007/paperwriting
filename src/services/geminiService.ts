@@ -7,7 +7,7 @@ export const initializeAI = (apiKey: string) => {
   aiClient = new GoogleGenAI({ apiKey });
 };
 
-const getClient = () => {
+export const getClient = () => {
   if (!aiClient) throw new Error("AI Client not initialized");
   return aiClient;
 };
