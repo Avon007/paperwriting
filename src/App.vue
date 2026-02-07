@@ -10,6 +10,7 @@ import AgentVisualizer from './components/AgentVisualizer.vue';
 import PaperWorkspace from './components/PaperWorkspace.vue';
 import ChatPanel from './components/ChatPanel.vue';
 import ActionToolbar from './components/ActionToolbar.vue';
+import AgentConversationPanel from './components/AgentConversationPanel.vue';
 
 // Initialize composables
 const { agents, updateAgent, addWriterAgent, resetAgents } = useAgents();
@@ -19,6 +20,8 @@ const {
   step,
   topic,
   paper,
+  conversation,
+  formattedConversation,
   performResearch,
   handleGenerateOutline,
   handleCreatePlan,
@@ -32,6 +35,7 @@ const {
 // Layout state
 const leftPanelWidth = ref(35);
 const leftPanelAgentHeight = ref(40);
+const conversationExpanded = ref(false);
 const { activeTarget, startResize, stopResize, calculateNewValue } = useMultiResizable();
 
 // Template refs
@@ -171,12 +175,20 @@ watch(activeTarget, (newTarget) => {
       >
         <!-- 1. Agents View (Resizable Height) -->
         <div
-          class="overflow-hidden shrink-0 flex flex-col min-h-0"
+          class="overflow-hidden shrink-0 flex flex-col min-h-0 space-y-3"
           :style="{ height: `${leftPanelAgentHeight}%`, minHeight: '100px' }"
         >
           <div class="flex-1 overflow-y-auto custom-scrollbar pr-1 pb-2">
             <AgentVisualizer :agents="agents" />
           </div>
+
+          <!-- Agent Conversation Panel -->
+          <AgentConversationPanel
+            v-if="conversation.messages.length > 0"
+            :conversation="conversation"
+            :expanded="conversationExpanded"
+            @toggle="conversationExpanded = !conversationExpanded"
+          />
         </div>
 
         <!-- 2. Action Toolbar -->

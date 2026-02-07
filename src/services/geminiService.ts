@@ -1,5 +1,5 @@
 import { GoogleGenAI, Type } from "@google/genai";
-import type { Reference, OutlineItem, WritingTask } from '../types';
+import type { Reference, OutlineItem, WritingTask, AgentRole, WorkflowStep } from '../types';
 
 let aiClient: GoogleGenAI | null = null;
 
@@ -217,4 +217,263 @@ export const polishPaper = async (fullText: string, instruction?: string, histor
 
     return response.text || fullText;
   });
+};
+
+// ================== AGENCY SWARM STYLE INTER-AGENT COMMUNICATION ==================
+
+/**
+ * Agent System Instructions
+ * Each agent has specific instructions about how to communicate
+ */
+const AGENT_INSTRUCTIONS: Record<AgentRole, string> = {
+  RESEARCHER: `You are the RESEARCHER agent. Your role is to:
+1. Search for academic references on the given topic
+2. Analyze and summarize key findings
+3. Communicate your findings to the OUTLINER agent
+
+When communicating with other agents:
+- Be clear about what you found
+- Highlight the most important references
+- Suggest potential paper structure based on findings`,
+
+  OUTLINER: `You are the OUTLINER agent. Your role is to:
+1. Review research findings from RESEARCHER
+2. Create a structured paper outline
+3. Communicate the outline to the PLANNER agent
+
+When communicating with other agents:
+- Present the outline clearly
+- Explain the logical flow
+- Suggest which sections need more research`,
+
+  PLANNER: `You are the PLANNER agent. Your role is to:
+1. Review the outline from OUTLINER
+2. Break down sections into writing tasks
+3. Assign tasks to WRITER agents
+4. Coordinate the writing workflow
+
+When communicating with other agents:
+- Be clear about task assignments
+- Provide context for each section
+- Track progress and dependencies`,
+
+  WRITER: `You are a WRITER agent. Your role is to:
+1. Receive writing assignments from PLANNER
+2. Write content for your assigned section
+3. Communicate completed work to EDITOR
+
+When communicating with other agents:
+- Confirm task understanding
+- Report progress updates
+- Deliver completed sections with summaries`,
+
+  EDITOR: `You are the EDITOR agent. Your role is to:
+1. Review completed sections from WRITERs
+2. Polish and refine the content
+3. Ensure consistency and flow
+4. Deliver final polished paper
+
+When communicating with other agents:
+- Request revisions when needed
+- Confirm receipt of sections
+- Broadcast final results to all agents`
+};
+
+/**
+ * Agent-to-Agent Communication
+ * This function simulates one agent sending a message to another
+ * It includes the agent's system instructions and conversation context
+ */
+export const agentSendMessage = async (
+  fromAgent: AgentRole,
+  toAgent: AgentRole | 'ALL',
+  message: string,
+  conversationContext: string,
+  attachments?: {
+    references?: Reference[];
+    outline?: OutlineItem[];
+    tasks?: WritingTask[];
+    content?: string;
+  }
+): Promise<string> => {
+  return callWithRetry(async () => {
+    const agentInstructions = AGENT_INSTRUCTIONS[fromAgent];
+
+    // Build context about attachments
+    let attachmentContext = '';
+    if (attachments?.references) {
+      attachmentContext += `\n\nREFERENCES ATTACHED:\n${attachments.references.map(r => `- ${r.title} (${r.year})`).join('\n')}`;
+    }
+    if (attachments?.outline) {
+      attachmentContext += `\n\nOUTLINE ATTACHED:\n${attachments.outline.map(o => `${o.id}. ${o.title}: ${o.description}`).join('\n')}`;
+    }
+    if (attachments?.tasks) {
+      attachmentContext += `\n\nTASKS ATTACHED:\n${attachments.tasks.map(t => `- ${t.title} → ${t.assignedAgent}`).join('\n')}`;
+    }
+    if (attachments?.content) {
+      attachmentContext += `\n\nCONTENT ATTACHED:\n${attachments.content}`;
+    }
+
+    const prompt = `${agentInstructions}
+
+CONVERSATION HISTORY:
+${conversationContext || '(No previous messages)'}
+
+YOUR TASK:
+Send a message to ${toAgent === 'ALL' ? 'ALL AGENTS' : `the ${toAgent} agent`}.
+
+MESSAGE TO COMMUNICATE:
+${message}
+
+${attachmentContext}
+
+IMPORTANT:
+- Respond with ONLY the message you want to send to ${toAgent === 'ALL' ? 'the other agents' : `the ${toAgent} agent`}.
+- Do NOT include any explanations or meta-commentary.
+- Be direct and professional.
+- Keep your message focused and actionable.`;
+
+    const response = await getClient().models.generateContent({
+      model: 'gemini-3-flash-preview',
+      contents: prompt
+    });
+
+    return response.text || '';
+  });
+};
+
+/**
+ * Multi-Agent Collaboration Workflow
+ * This orchestrates a full step with inter-agent communication
+ */
+export const runAgentCollaborationStep = async (
+  step: WorkflowStep,
+  topic: string,
+  data: {
+    references?: Reference[];
+    outline?: OutlineItem[];
+    tasks?: WritingTask[];
+    content?: string;
+  },
+  conversationContext: string
+): Promise<{
+  agentMessages: Array<{ from: AgentRole; to: AgentRole | 'ALL'; content: string }>;
+  result: {
+    references?: Reference[];
+    outline?: OutlineItem[];
+    tasks?: WritingTask[];
+    content?: string;
+  };
+}> => {
+  const agentMessages: Array<{ from: AgentRole; to: AgentRole | 'ALL'; content: string }> = [];
+
+  switch (step) {
+    case 'RESEARCH': {
+      // RESEARCHER conducts research and reports to OUTLINER
+      const references = await researchTopic(topic, conversationContext);
+
+      // RESEARCHER sends message to OUTLINER
+      const researcherMsg = await agentSendMessage(
+        'RESEARCHER',
+        'OUTLINER',
+        `I've completed research on "${topic}". I found ${references.length} relevant papers. Key findings include:\n${references.slice(0, 3).map(r => r.keyFinding).join('\n')}\n\nReady to proceed with outline creation.`,
+        conversationContext,
+        { references }
+      );
+      agentMessages.push({ from: 'RESEARCHER', to: 'OUTLINER', content: researcherMsg });
+
+      return { agentMessages, result: { references } };
+    }
+
+    case 'OUTLINE': {
+      // OUTLINER reviews references and creates outline
+      const outline = await generateOutline(topic, data.references || []);
+
+      // OUTLINER sends message to PLANNER
+      const outlinerMsg = await agentSendMessage(
+        'OUTLINER',
+        'PLANNER',
+        `I've created a structured outline for "${topic}" with ${outline.length} sections:\n${outline.map(o => `- ${o.title}`).join('\n')}\n\nReady for task planning.`,
+        conversationContext,
+        { outline }
+      );
+      agentMessages.push({ from: 'OUTLINER', to: 'PLANNER', content: outlinerMsg });
+
+      return { agentMessages, result: { outline } };
+    }
+
+    case 'PLAN': {
+      // PLANNER creates writing tasks and broadcasts to WRITERs
+      const tasks = await createWritingPlan(data.outline || []);
+
+      // PLANNER broadcasts to ALL WRITERs
+      const plannerMsg = await agentSendMessage(
+        'PLANNER',
+        'ALL',
+        `I've created ${tasks.length} writing tasks. Each WRITER unit should pick up their assigned section:\n${tasks.map(t => `- ${t.title} → ${t.assignedAgent}`).join('\n')}\n\nPlease begin writing your sections.`,
+        conversationContext,
+        { tasks }
+      );
+      agentMessages.push({ from: 'PLANNER', to: 'ALL', content: plannerMsg });
+
+      return { agentMessages, result: { tasks } };
+    }
+
+    case 'WRITING': {
+      // Each WRITER works on their section
+      const tasks = data.tasks || [];
+      const writerMessages: Array<{ from: AgentRole; to: AgentRole | 'ALL'; content: string }> = [];
+
+      for (const task of tasks) {
+        if (task.status === 'pending') {
+          // WRITER sends message confirming task
+          const writerStartMsg = await agentSendMessage(
+            'WRITER',
+            'EDITOR',
+            `Starting work on section: "${task.title}"`,
+            conversationContext
+          );
+          writerMessages.push({ from: 'WRITER', to: 'EDITOR', content: writerStartMsg });
+
+          // Write the section
+          const content = await writeSection(topic, task, data.outline || [], data.references || []);
+          task.content = content;
+          task.status = 'completed';
+
+          // WRITER sends completed section
+          const writerDoneMsg = await agentSendMessage(
+            'WRITER',
+            'EDITOR',
+            `Completed section: "${task.title}" (${content.length} chars)`,
+            conversationContext,
+            { content }
+          );
+          writerMessages.push({ from: 'WRITER', to: 'EDITOR', content: writerDoneMsg });
+        }
+      }
+
+      return { agentMessages: writerMessages, result: { tasks } };
+    }
+
+    case 'POLISHING': {
+      // EDITOR polishes the full paper and broadcasts to ALL
+      const fullContent = data.tasks?.map(t => t.content).join('\n\n') || '';
+      const polished = await polishPaper(fullContent, undefined, conversationContext);
+
+      // EDITOR broadcasts final result to ALL agents
+      const editorMsg = await agentSendMessage(
+        'EDITOR',
+        'ALL',
+        `Final polishing complete! The paper "${topic}" has been refined and is ready.\n\nTotal sections: ${data.tasks?.length || 0}\nTotal characters: ${polished.length}\n\n✅ PAPER COMPLETE`,
+        conversationContext,
+        { content: polished }
+      );
+      agentMessages.push({ from: 'EDITOR', to: 'ALL', content: editorMsg });
+
+      return { agentMessages, result: { content: polished } };
+    }
+
+    default:
+      return { agentMessages, result: data };
+  }
 };

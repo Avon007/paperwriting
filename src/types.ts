@@ -43,3 +43,38 @@ export interface ChatMessage {
   role: 'user' | 'model';
   text: string;
 }
+
+// Agent Communication Types (Agency Swarm style)
+export type AgentRole = 'RESEARCHER' | 'OUTLINER' | 'PLANNER' | 'WRITER' | 'EDITOR';
+
+export interface AgentMessage {
+  id: string;
+  timestamp: number;
+  fromAgent: AgentRole;
+  toAgent: AgentRole | 'ALL'; // 'ALL' for broadcast messages
+  content: string;
+  step: WorkflowStep;
+  attachments?: {
+    references?: Reference[];
+    outline?: OutlineItem[];
+    tasks?: WritingTask[];
+    content?: string;
+  };
+}
+
+export interface AgentConversation {
+  id: string;
+  participants: AgentRole[];
+  messages: AgentMessage[];
+  status: 'active' | 'completed' | 'blocked';
+  currentStep: WorkflowStep;
+  createdAt: number;
+  updatedAt: number;
+}
+
+// Communication flow definition (Agency Swarm style)
+export interface CommunicationFlow {
+  from: AgentRole;
+  to: AgentRole | 'ALL';
+  condition?: WorkflowStep;
+}

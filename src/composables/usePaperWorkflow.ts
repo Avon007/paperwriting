@@ -6,8 +6,10 @@ import {
   refineOutline,
   createWritingPlan,
   writeSection,
-  polishPaper
+  polishPaper,
+  runAgentCollaborationStep
 } from '../services/geminiService';
+import { useAgentChat } from './useAgentChat';
 
 export function usePaperWorkflow(
   updateAgent: (id: string, status: Agent['status'], action?: string) => void,
@@ -18,6 +20,16 @@ export function usePaperWorkflow(
   const step = ref<WorkflowStep>('INPUT');
   const isLoading = ref(false);
   const topic = ref('');
+
+  // Initialize agent chat system (Agency Swarm style)
+  const {
+    conversation,
+    addMessage,
+    getAgentContext,
+    clearConversation,
+    updateStep: updateConversationStep,
+    formattedConversation
+  } = useAgentChat();
 
   const paper = reactive<PaperState>({
     topic: '',
@@ -192,6 +204,7 @@ export function usePaperWorkflow(
   const resetWorkflow = () => {
     topic.value = '';
     step.value = 'INPUT';
+    clearConversation();
     Object.assign(paper, {
       topic: '',
       references: [],
@@ -202,12 +215,96 @@ export function usePaperWorkflow(
     });
   };
 
+  // ================== NEW AGENCY SWARM STYLE WORKFLOW ==================
+  // This function runs a workflow step with inter-agent communication
+
+  const runCollaborativeStep = async (workflowStep: WorkflowStep) => {
+    isLoading.value = true;
+    step.value = workflowStep;
+    updateConversationStep(workflowStep);
+
+    try {
+      // Get conversation context for agents
+      const agentContext = getAgentContext('RESEARCHER' as any); // Get full context
+
+      // Run the collaborative step with inter-agent communication
+      const { agentMessages, result } = await runAgentCollaborationStep(
+        workflowStep,
+        topic.value,
+        {
+          references: paper.references,
+          outline: paper.outline,
+          tasks: paper.tasks,
+          content: paper.fullContent
+        },
+        agentContext
+      );
+
+      // Add all agent messages to the conversation
+      agentMessages.forEach(msg => {
+        addMessage(
+          msg.from,
+          msg.to,
+          msg.content,
+          workflowStep,
+          result
+        );
+      });
+
+      // Update paper state with results
+      if (result.references) paper.references = result.references;
+      if (result.outline) paper.outline = result.outline;
+      if (result.tasks) {
+        paper.tasks = result.tasks;
+        // Add writer agents for each task
+        result.tasks.forEach(task => {
+          addWriterAgent(task.id, task.assignedAgent);
+        });
+      }
+      if (result.content) {
+        paper.fullContent = result.content;
+        paper.finalPolish = result.content;
+      }
+
+      // Update agent statuses based on messages
+      const lastMessage = agentMessages[agentMessages.length - 1];
+      if (lastMessage) {
+        updateAgent(
+          lastMessage.from.toLowerCase(),
+          'finished',
+          `Message sent to ${lastMessage.to === 'ALL' ? 'all agents' : lastMessage.to}`
+        );
+      }
+
+      // Notify user
+      const stepNames: Record<WorkflowStep, string> = {
+        INPUT: 'Input',
+        RESEARCH: 'Research',
+        OUTLINE: 'Outline',
+        PLAN: 'Planning',
+        WRITING: 'Writing',
+        POLISHING: 'Polishing',
+        COMPLETE: 'Complete'
+      };
+      addBotMessage(`✅ ${stepNames[workflowStep]} step completed! ${agentMessages.length} agent messages exchanged.`);
+
+    } catch (e) {
+      handleError(e, workflowStep);
+    } finally {
+      isLoading.value = false;
+    }
+  };
+
   return {
     // State
     step,
     isLoading,
     topic,
     paper,
+
+    // Agent conversation state (NEW)
+    conversation,
+    formattedConversation,
 
     // Actions
     performResearch,
@@ -218,6 +315,9 @@ export function usePaperWorkflow(
     handleRefineOutline,
     handleEditPaper,
     resetWorkflow,
+
+    // NEW: Collaborative workflow actions
+    runCollaborativeStep,
 
     // Helpers
     handleError
