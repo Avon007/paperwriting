@@ -7,10 +7,13 @@ import { usePaperWorkflow } from './composables/usePaperWorkflow';
 import { useMultiResizable } from './composables/useResizableLayout';
 import AppHeader from './components/AppHeader.vue';
 import AgentVisualizer from './components/AgentVisualizer.vue';
+import AgentPoolVisualizer from './components/AgentPoolVisualizer.vue';
 import PaperWorkspace from './components/PaperWorkspace.vue';
 import ChatPanel from './components/ChatPanel.vue';
 import ActionToolbar from './components/ActionToolbar.vue';
 import AgentConversationPanel from './components/AgentConversationPanel.vue';
+import MultiAgentResults from './components/MultiAgentResults.vue';
+import PeerReviewConversation from './components/PeerReviewConversation.vue';
 
 // Initialize composables
 const { agents, updateAgent, addWriterAgent, resetAgents } = useAgents();
@@ -22,6 +25,10 @@ const {
   paper,
   conversation,
   formattedConversation,
+  showMultiAgentResults,
+  currentMultiAgentRole,
+  agentInstances,
+  evaluationResults,
   performResearch,
   handleGenerateOutline,
   handleCreatePlan,
@@ -178,17 +185,35 @@ watch(activeTarget, (newTarget) => {
           class="overflow-hidden shrink-0 flex flex-col min-h-0 space-y-3"
           :style="{ height: `${leftPanelAgentHeight}%`, minHeight: '100px' }"
         >
-          <div class="flex-1 overflow-y-auto custom-scrollbar pr-1 pb-2">
-            <AgentVisualizer :agents="agents" />
-          </div>
+          <div class="flex-1 overflow-y-auto custom-scrollbar pr-1 pb-2 space-y-3">
+            <!-- Show AgentPoolVisualizer when multi-agent is active -->
+            <AgentPoolVisualizer v-if="showMultiAgentResults && agentInstances.length > 0" :agents="agentInstances" />
+            <AgentVisualizer v-else :agents="agents" />
 
-          <!-- Agent Conversation Panel -->
-          <AgentConversationPanel
-            v-if="conversation.messages.length > 0"
-            :conversation="conversation"
-            :expanded="conversationExpanded"
-            @toggle="conversationExpanded = !conversationExpanded"
-          />
+            <!-- Multi-Agent Results Display -->
+            <MultiAgentResults
+              v-if="showMultiAgentResults && agentInstances.length > 0"
+              :agents="agentInstances"
+              :evaluations="evaluationResults"
+              :role="currentMultiAgentRole"
+              @select-result="(agentId) => console.log('Selected result:', agentId)"
+            />
+
+            <!-- Agent Conversation Panel -->
+            <AgentConversationPanel
+              v-if="conversation.messages.length > 0"
+              :conversation="conversation"
+              :expanded="conversationExpanded"
+              @toggle="conversationExpanded = !conversationExpanded"
+            />
+
+            <!-- Peer Review Conversation -->
+            <PeerReviewConversation
+              v-if="showMultiAgentResults && agentInstances.length > 0 && agentInstances.some(a => a.peerReviewsReceived.length > 0)"
+              :agents="agentInstances"
+              :role="currentMultiAgentRole"
+            />
+          </div>
         </div>
 
         <!-- 2. Action Toolbar -->

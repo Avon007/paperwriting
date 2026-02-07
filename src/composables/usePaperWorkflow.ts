@@ -1,5 +1,5 @@
 import { ref, reactive, watch } from 'vue';
-import type { PaperState, WorkflowStep, WritingTask, OutlineItem, Reference, Agent } from '../types';
+import type { PaperState, WorkflowStep, WritingTask, OutlineItem, Reference, Agent, AgentInstance, EvaluationResult } from '../types';
 import {
   researchTopic,
   generateOutline,
@@ -10,6 +10,8 @@ import {
   runAgentCollaborationStep
 } from '../services/geminiService';
 import { useAgentChat } from './useAgentChat';
+import { useMultiAgentResearch } from './useMultiAgentResearch';
+import { loadAgentConfig } from '../config/agentConfig';
 
 export function usePaperWorkflow(
   updateAgent: (id: string, status: Agent['status'], action?: string) => void,
@@ -20,6 +22,24 @@ export function usePaperWorkflow(
   const step = ref<WorkflowStep>('INPUT');
   const isLoading = ref(false);
   const topic = ref('');
+
+  // Load agent config
+  const agentConfig = loadAgentConfig();
+
+  // Initialize multi-agent research system
+  const {
+    isLoading: isMultiAgentLoading,
+    executionStatus,
+    evaluationResults,
+    agentInstances,
+    executeMultiAgentResearch,
+    getSummary,
+    resetPool
+  } = useMultiAgentResearch();
+
+  // State for multi-agent results
+  const showMultiAgentResults = ref(false);
+  const currentMultiAgentRole = ref<'RESEARCHER' | 'OUTLINER' | 'PLANNER' | 'WRITER' | 'EDITOR'>('RESEARCHER');
 
   // Initialize agent chat system (Agency Swarm style)
   const {
@@ -70,15 +90,48 @@ export function usePaperWorkflow(
   const performResearch = async (instruction: string, isRefinement: boolean, history: string) => {
     const topicToSearch = isRefinement ? paper.topic : instruction;
 
-    updateAgent('researcher', 'working', `Scanning databases for: ${topicToSearch.slice(0, 30)}...`);
-    try {
-      const refs = await researchTopic(topicToSearch, history);
-      paper.references = refs;
-      updateAgent('researcher', 'finished', `Found ${refs.length} references`);
-      addBotMessage(`I found ${refs.length} sources. Review them in the workspace.`);
-    } catch (e) {
-      updateAgent('researcher', 'idle', 'Error');
-      handleError(e, 'Research');
+    // Check if multi-agent research is enabled
+    const useMultiAgent = agentConfig.researcher.count > 1;
+
+    if (useMultiAgent) {
+      // Multi-agent research workflow
+      currentMultiAgentRole.value = 'RESEARCHER';
+      showMultiAgentResults.value = true;
+
+      addBotMessage(`🚀 启动多智能体研究模式 (${agentConfig.researcher.count} 个 RESEARCHER 智能体)...`);
+
+      try {
+        const result = await executeMultiAgentResearch(topicToSearch, (status) => {
+          // Update execution status for UI feedback
+          console.log('Multi-agent progress:', status);
+        });
+
+        // Use the best result
+        paper.references = result.references;
+        updateAgent('researcher', 'finished', `Found ${result.references.length} references (multi-agent)`);
+
+        // Notify user
+        const winnerMsg = result.winner
+          ? `🏆 最佳方案由 ${result.winner.id} 提供 (得分: ${result.winner.score.toFixed(2)})`
+          : '已完成多智能体研究';
+
+        addBotMessage(`✅ 多智能体研究完成！\n${winnerMsg}\n\n共找到 ${result.references.length} 篇文献。\n${result.evaluations.length} 条互评已生成。`);
+      } catch (e) {
+        updateAgent('researcher', 'idle', 'Error');
+        handleError(e, 'Multi-Agent Research');
+      }
+    } else {
+      // Single-agent research workflow (original)
+      updateAgent('researcher', 'working', `Scanning databases for: ${topicToSearch.slice(0, 30)}...`);
+      try {
+        const refs = await researchTopic(topicToSearch, history);
+        paper.references = refs;
+        updateAgent('researcher', 'finished', `Found ${refs.length} references`);
+        addBotMessage(`I found ${refs.length} sources. Review them in the workspace.`);
+      } catch (e) {
+        updateAgent('researcher', 'idle', 'Error');
+        handleError(e, 'Research');
+      }
     }
   };
 
@@ -306,6 +359,13 @@ export function usePaperWorkflow(
     conversation,
     formattedConversation,
 
+    // Multi-agent state (NEW)
+    showMultiAgentResults,
+    currentMultiAgentRole,
+    agentInstances,
+    evaluationResults,
+    executionStatus,
+
     // Actions
     performResearch,
     handleGenerateOutline,
@@ -318,6 +378,9 @@ export function usePaperWorkflow(
 
     // NEW: Collaborative workflow actions
     runCollaborativeStep,
+
+    // Multi-agent actions (NEW)
+    getSummary,
 
     // Helpers
     handleError

@@ -2,14 +2,15 @@ import type { AgentConfig } from '../types';
 
 /**
  * Default agent configuration
- * Each role starts with 1 agent, no peer review, and best selection
+ * Start with 3 RESEARCHER agents for testing multi-agent functionality
  */
 export const DEFAULT_AGENT_CONFIG: AgentConfig = {
   researcher: {
-    count: 1,
-    strategy: 'parallel',
-    enablePeerReview: false,
-    voteMethod: 'best'
+    count: 3,
+    strategy: 'specialized',
+    specializations: ['理论方法', '实验应用', '最新进展'],
+    enablePeerReview: true,
+    voteMethod: 'weighted'
   },
   outliner: {
     count: 1,
