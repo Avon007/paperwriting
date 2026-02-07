@@ -49,23 +49,47 @@ const callWithRetry = async <T>(
 };
 
 // --- AGENT 1: RESEARCHER ---
-export const researchTopic = async (topic: string, history: string = ""): Promise<Reference[]> => {
+export const researchTopic = async (topic: string, history: string = "", focus?: string): Promise<Reference[]> => {
   return callWithRetry(async () => {
+    // Extract the main topic if a focus is specified (format: "topic (Focus: specialization)")
+    let mainTopic = topic;
+    let specialization = focus;
+
+    // Parse topic if it contains focus info
+    const focusMatch = topic.match(/^(.+?)\s*\(Focus:\s*(.+)\)$/);
+    if (focusMatch) {
+      mainTopic = focusMatch[1];
+      specialization = focusMatch[2];
+    }
+
+    // Build focused prompt
+    let focusInstruction = "";
+    if (specialization) {
+      focusInstruction = `
+      SPECIALIZATION REQUIREMENT: You must focus specifically on "${specialization}" aspect of this topic.
+      - ONLY select papers that directly relate to ${specialization}
+      - Emphasize methodologies, findings, and perspectives unique to ${specialization}
+      - Avoid generic papers that don't specifically address ${specialization}
+      - Ensure all key findings highlight ${specialization}-specific insights`;
+    }
+
     const response = await getClient().models.generateContent({
       model: 'gemini-3-flash-preview',
-      contents: `Act as a Senior Academic Researcher.
+      contents: `Act as a Senior Academic Researcher specializing in ${specialization || 'general research'}.
 
-      CORE TOPIC: "${topic}"
+      CORE TOPIC: "${mainTopic}"
+      ${focusInstruction}
 
       ${history ? `RECENT CONVERSATION CONTEXT (Use this to refine the search parameters, quantity, or focus):
       ${history}` : ''}
 
       INSTRUCTIONS:
-      1. Conduct a literature review.
+      1. Conduct a literature review${specialization ? ` with a strong focus on ${specialization}` : ''}.
       2. Analyze the topic and conversation context to check if the user specified a quantity (e.g., "find 20 papers") or a specific sub-niche.
       3. If a quantity is specified, generate exactly that many references.
       4. If no quantity is specified, generate 10 high-quality simulated references.
-      5. Provide the result strictly as a JSON array.`,
+      5. ${specialization ? `CRITICAL: All papers MUST be highly relevant to ${specialization}. Include domain-specific terminology and methodologies.` : ''}
+      6. Provide the result strictly as a JSON array.`,
       config: {
         responseMimeType: 'application/json',
         responseSchema: {

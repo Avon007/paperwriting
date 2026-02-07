@@ -133,26 +133,40 @@ export class PeerReviewSystem {
     criteria: string,
     context?: string
   ): string {
-    const specializationInfo = target.specialization
-      ? `\nSpecialization: ${target.specialization}`
-      : '';
+    const reviewerSpec = reviewer.specialization ? ` - ${reviewer.specialization}` : '';
+    const targetSpec = target.specialization ? ` - ${target.specialization}` : '';
 
-    return `You are ${reviewer.id} (${reviewer.role}${reviewer.specialization ? ` - ${reviewer.specialization}` : ''}).
+    return `You are ${reviewer.id} (${reviewer.role}${reviewerSpec}).
 
-Your task is to review the work produced by ${target.id} (${target.role}${specializationInfo}).
+Your task is to review the research work produced by ${target.id} (${target.role}${targetSpec}).
+
+${target.specialization ? `
+IMPORTANT: The work you are reviewing focuses on "${target.specialization}".
+- Evaluate this work based on how well it covers ${target.specialization} aspects
+- Consider the unique value and perspective of ${target.specialization} research
+- Different specializations provide complementary value - don't penalize for not covering areas outside its scope
+- Assess quality within the scope of ${target.specialization}
+` : ''}
+
+${reviewer.specialization ? `
+As a researcher specializing in "${reviewer.specialization}":
+- Provide expert evaluation from your ${reviewer.specialization} perspective
+- Identify gaps or opportunities from your specialized viewpoint
+- Recognize complementary value of different specializations
+` : ''}
 
 EVALUATION CRITERIA:
 ${criteria}
 
 ${context ? `ADDITIONAL CONTEXT:\n${context}\n` : ''}
 
-WORK TO REVIEW:
+WORK TO REVIEW (${target.result?.length || 0} references):
 ${JSON.stringify(target.result, null, 2)}
 
 Please provide an objective evaluation:
 
 1. Quality (1-10): Overall quality and excellence of the work
-2. Completeness (1-10): How thorough and complete the work is
+2. Completeness (1-10): How thorough and complete the work is ${target.specialization ? `within the scope of ${target.specialization}` : ''}
 3. Creativity (1-10): Originality, innovation, and creative approach
 4. Accuracy (1-10): Factual correctness, precision, and reliability
 
@@ -160,6 +174,7 @@ Also provide constructive comments highlighting:
 - Strengths (what was done well)
 - Weaknesses (what could be improved)
 - Specific suggestions for enhancement
+- ${target.specialization ? `How well this work addresses ${target.specialization} aspects` : 'Overall assessment'}
 
 Respond in JSON format:
 {

@@ -56,19 +56,26 @@ export function useMultiAgentResearch() {
         ? await ParallelExecutor.executeWithRateLimit(
             researchers,
             async (agent) => {
-              // Build specialized prompt if applicable
-              let prompt = topic;
+              // Build specialized prompt with clear focus
+              let searchTopic = topic;
+              let focusArea = agent.specialization || undefined;
+
+              // If agent has specialization, create focused search query
               if (agent.specialization) {
-                prompt = `${topic} (Focus: ${agent.specialization})`;
+                searchTopic = `${topic} - 专注于${agent.specialization}方向`;
+                console.log(`Agent ${agent.id} searching with focus: ${agent.specialization}`);
               }
 
-              // Execute research
-              updateAgentStatus(agent.id, 'working', null, `Searching: ${prompt.slice(0, 30)}...`);
+              // Execute research with focus
+              updateAgentStatus(agent.id, 'working', null,
+                `Searching${agent.specialization ? ` (${agent.specialization})` : ''}: ${topic.slice(0, 30)}...`
+              );
 
-              const references = await researchTopic(prompt);
+              const references = await researchTopic(searchTopic, '', focusArea);
 
               updateAgentStatus(agent.id, 'finished', references);
 
+              console.log(`Agent ${agent.id} found ${references.length} references`);
               return references;
             },
             3000, // 3 second delay between agents
@@ -88,10 +95,19 @@ export function useMultiAgentResearch() {
       if (researcherConfig.enablePeerReview && researchers.length > 1) {
         const criteria = `
 Evaluate the quality of research results based on:
-1. Relevance: How well the references match the research topic
-2. Diversity: Variety of sources and perspectives
-3. Quality: Academic rigor and credibility of sources
-4. Completeness: Coverage of key aspects of the topic
+1. Relevance: How well the references match the research topic and its specialization
+2. Diversity: Variety of sources, perspectives, and methodological approaches
+3. Quality: Academic rigor, credibility of sources, and publication venues
+4. Completeness: Coverage of key aspects within the stated specialization focus
+5. Specialization Alignment: How well the work addresses its specialized focus area
+6. Complementary Value: Unique contributions that differ from other specializations
+
+IMPORTANT EVALUATION PRINCIPLES:
+- Different specializations (理论方法/实验应用/最新进展) provide complementary value
+- Do not penalize a work for not covering areas outside its stated specialization
+- Evaluate quality based on how well it covers its specialized domain
+- Recognize that theoretical, experimental, and cutting-edge approaches each have unique merit
+- High scores should be given to works that excel in their specialized area
         `;
 
         const reviews = await PeerReviewSystem.conductPeerReviews(
