@@ -12,13 +12,19 @@ const props = defineProps<Props>();
 
 // Get all reviews across all agents
 const allReviews = computed(() => {
-  const reviews: Array<{ review: PeerReview; reviewer: AgentInstance; target: AgentInstance }> = [];
+  const reviews: Array<{ review: PeerReview; reviewer: AgentInstance | null; target: AgentInstance }> = [];
 
   props.agents.forEach(agent => {
     agent.peerReviewsReceived.forEach(review => {
-      const reviewer = props.agents.find(a => a.id === review.reviewerId);
-      if (reviewer) {
-        reviews.push({ review, reviewer, target: agent });
+      if (review.isUserComment) {
+        // User comment - reviewer is null
+        reviews.push({ review, reviewer: null, target: agent });
+      } else {
+        // Agent review
+        const reviewer = props.agents.find(a => a.id === review.reviewerId);
+        if (reviewer) {
+          reviews.push({ review, reviewer, target: agent });
+        }
       }
     });
   });
@@ -46,20 +52,22 @@ const getScoreColor = (score: number) => {
 
 // Group reviews by conversation
 const conversationGroups = computed(() => {
-  const groups: Array<{ id: string; reviewerId: string; targetId: string; timestamp: number; reviews: PeerReview[] }> = [];
+  const groups: Array<{ id: string; reviewerId: string; targetId: string; timestamp: number; reviews: PeerReview[]; isUserComment?: boolean }> = [];
 
   allReviews.value.forEach(item => {
-    const existing = groups.find(g => g.reviewerId === item.review.reviewerId && g.targetId === item.review.targetId);
+    const reviewerId = item.review.isUserComment ? 'USER' : item.review.reviewerId;
+    const existing = groups.find(g => g.reviewerId === reviewerId && g.targetId === item.review.targetId);
 
     if (existing) {
       existing.reviews.push(item.review);
     } else {
       groups.push({
-        id: `${item.review.reviewerId}->${item.review.targetId}`,
-        reviewerId: item.review.reviewerId,
+        id: `${reviewerId}->${item.review.targetId}`,
+        reviewerId,
         targetId: item.review.targetId,
         timestamp: item.review.timestamp,
-        reviews: [item.review]
+        reviews: [item.review],
+        isUserComment: item.review.isUserComment
       });
     }
   });
@@ -97,8 +105,8 @@ const conversationGroups = computed(() => {
       >
         <!-- Review Header -->
         <div class="flex items-center gap-2 mb-3 text-sm">
-          <div class="font-bold text-purple-400">
-            {{ agents.find(a => a.id === group.reviewerId)?.id }} 评审
+          <div class="font-bold" :class="group.isUserComment ? 'text-green-400' : 'text-purple-400'">
+            {{ group.isUserComment ? '👤 用户评论' : agents.find(a => a.id === group.reviewerId)?.id }} 评审
           </div>
           <div class="text-zinc-500">→</div>
           <div class="font-bold text-blue-400">
@@ -115,8 +123,8 @@ const conversationGroups = computed(() => {
           :key="review.id"
           class="space-y-2"
         >
-          <!-- Scores -->
-          <div class="grid grid-cols-4 gap-2 text-xs bg-zinc-900/50 rounded p-2">
+          <!-- Scores (only for agent reviews, not user comments) -->
+          <div v-if="!review.isUserComment && review.scores" class="grid grid-cols-4 gap-2 text-xs bg-zinc-900/50 rounded p-2">
             <div class="flex flex-col">
               <span class="text-zinc-500">质量</span>
               <span class="font-bold text-lg" :class="getScoreColor(review.scores.quality)">
@@ -143,8 +151,8 @@ const conversationGroups = computed(() => {
             </div>
           </div>
 
-          <!-- Overall Score -->
-          <div class="flex items-center gap-2 mb-2">
+          <!-- Overall Score (only for agent reviews) -->
+          <div v-if="!review.isUserComment && review.overallScore" class="flex items-center gap-2 mb-2">
             <div class="flex items-center gap-1 text-sm">
               <Star :size="14" class="text-yellow-400" />
               <span class="text-zinc-400">综合得分:</span>
@@ -155,9 +163,13 @@ const conversationGroups = computed(() => {
           </div>
 
           <!-- Comments -->
-          <div class="bg-zinc-900 rounded p-3 text-sm">
-            <div class="text-xs text-zinc-400 mb-1">评审意见:</div>
-            <div class="text-zinc-300 whitespace-pre-wrap">{{ review.comments }}</div>
+          <div class="rounded p-3 text-sm" :class="review.isUserComment ? 'bg-green-900/20 border border-green-700' : 'bg-zinc-900'">
+            <div class="text-xs mb-1" :class="review.isUserComment ? 'text-green-400' : 'text-zinc-400'">
+              {{ review.isUserComment ? '💬 您的评论:' : '评审意见:' }}
+            </div>
+            <div class="whitespace-pre-wrap" :class="review.isUserComment ? 'text-green-200' : 'text-zinc-300'">
+              {{ review.comments }}
+            </div>
           </div>
         </div>
       </div>

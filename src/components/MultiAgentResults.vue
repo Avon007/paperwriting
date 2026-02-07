@@ -1,7 +1,7 @@
 <script setup lang="ts">
-import { computed } from 'vue';
+import { computed, ref } from 'vue';
 import type { AgentInstance, EvaluationResult, Reference } from '../types';
-import { Trophy, Medal, Award, Star, MessageSquare } from 'lucide-vue-next';
+import { Trophy, Medal, Award, Star, MessageSquare, ChevronDown, ChevronUp, MessageCircle } from 'lucide-vue-next';
 
 interface Props {
   agents: AgentInstance[];
@@ -13,7 +13,34 @@ const props = defineProps<Props>();
 
 const emit = defineEmits<{
   selectResult: [agentId: string];
+  addComment: [agentId: string, comment: string];
 }>();
+
+// Track expanded state for each agent
+const expandedAgents = ref<Set<string>>(new Set());
+
+// Track comment input for each agent
+const commentInputs = ref<Record<string, string>>({});
+
+// Toggle expanded state
+const toggleExpanded = (agentId: string) => {
+  if (expandedAgents.value.has(agentId)) {
+    expandedAgents.value.delete(agentId);
+  } else {
+    expandedAgents.value.add(agentId);
+  }
+  // Force reactivity
+  expandedAgents.value = new Set(expandedAgents.value);
+};
+
+// Submit comment
+const submitComment = (agentId: string) => {
+  const comment = commentInputs.value[agentId]?.trim();
+  if (comment) {
+    emit('addComment', agentId, comment);
+    commentInputs.value[agentId] = '';
+  }
+};
 
 // Sort agents by score
 const rankedAgents = computed(() => {
@@ -176,19 +203,31 @@ const hasReviews = (agent: AgentInstance) => {
           </div>
         </div>
 
-        <!-- Result Preview -->
+        <!-- Result Preview with Expand -->
         <div class="mb-3">
-          <div class="text-xs text-zinc-400 mb-1">结果预览</div>
-          <div class="text-sm bg-zinc-800 rounded p-2 max-h-24 overflow-y-auto">
+          <div class="flex items-center justify-between mb-1">
+            <div class="text-xs text-zinc-400">结果预览</div>
+            <button
+              @click="toggleExpanded(agent.id)"
+              class="flex items-center gap-1 text-xs text-blue-400 hover:text-blue-300 transition-colors"
+            >
+              {{ expandedAgents.has(agent.id) ? '收起' : '展开全部' }}
+              <component :is="expandedAgents.has(agent.id) ? ChevronUp : ChevronDown" :size="14" />
+            </button>
+          </div>
+
+          <!-- Preview or Full Result -->
+          <div class="text-sm bg-zinc-800 rounded p-2" :class="expandedAgents.has(agent.id) ? 'max-h-96 overflow-y-auto' : 'max-h-24 overflow-y-auto'">
             <!-- RESEARCHER specific -->
             <template v-if="role === 'RESEARCHER'">
               <div v-if="Array.isArray(agent.result)">
-                <div v-for="(ref, i) in agent.result.slice(0, 3)" :key="i" class="mb-1 last:mb-0">
-                  <div class="font-medium text-xs text-indigo-300">{{ ref.title }}</div>
-                  <div class="text-xs text-zinc-400">{{ ref.author }} ({{ ref.year }})</div>
+                <div v-for="(ref, i) in (expandedAgents.has(agent.id) ? agent.result : agent.result.slice(0, 3))" :key="i" class="mb-2 last:mb-0 pb-2 last:pb-0 border-b border-zinc-700 last:border-0">
+                  <div class="font-medium text-sm text-indigo-300">{{ ref.title }}</div>
+                  <div class="text-xs text-zinc-400 mt-1">{{ ref.author }} ({{ ref.year }})</div>
+                  <div class="text-xs text-zinc-500 mt-1">{{ ref.keyFinding }}</div>
                 </div>
-                <div v-if="agent.result.length > 3" class="text-xs text-zinc-500 italic">
-                  ... 还有 {{ agent.result.length - 3 }} 篇
+                <div v-if="!expandedAgents.has(agent.id) && agent.result.length > 3" class="text-xs text-zinc-500 italic">
+                  ... 点击展开查看全部 {{ agent.result.length }} 篇文献
                 </div>
               </div>
             </template>
@@ -196,22 +235,23 @@ const hasReviews = (agent: AgentInstance) => {
             <!-- OUTLINER specific -->
             <template v-else-if="role === 'OUTLINER'">
               <div v-if="Array.isArray(agent.result)">
-                <div v-for="(item, i) in agent.result.slice(0, 3)" :key="i" class="mb-1 last:mb-0">
-                  <div class="text-xs">{{ item.title }}</div>
+                <div v-for="(item, i) in (expandedAgents.has(agent.id) ? agent.result : agent.result.slice(0, 3))" :key="i" class="mb-2 last:mb-0 pb-2 last:pb-0 border-b border-zinc-700 last:border-0">
+                  <div class="text-xs font-semibold text-blue-300">{{ item.id }}. {{ item.title }}</div>
+                  <div class="text-xs text-zinc-400 mt-1">{{ item.description }}</div>
                 </div>
-                <div v-if="agent.result.length > 3" class="text-xs text-zinc-500 italic">
-                  ... 还有 {{ agent.result.length - 3 }} 个章节
+                <div v-if="!expandedAgents.has(agent.id) && agent.result.length > 3" class="text-xs text-zinc-500 italic">
+                  ... 点击展开查看全部 {{ agent.result.length }} 个章节
                 </div>
               </div>
             </template>
 
             <!-- WRITER/EDITOR specific -->
             <template v-else-if="role === 'WRITER' || role === 'EDITOR'">
-              <div class="text-xs text-zinc-300 line-clamp-3">
-                {{ (agent.result as string).substring(0, 200) }}...
+              <div class="text-xs text-zinc-300 whitespace-pre-wrap" :class="expandedAgents.has(agent.id) ? '' : 'line-clamp-3'">
+                {{ agent.result as string }}
               </div>
-              <div class="text-xs text-zinc-500 mt-1">
-                {{ formatResult(agent) }}
+              <div v-if="!expandedAgents.has(agent.id)" class="text-xs text-zinc-500 mt-1">
+                {{ formatResult(agent) }} - 点击展开查看完整内容
               </div>
             </template>
 
@@ -228,6 +268,30 @@ const hasReviews = (agent: AgentInstance) => {
         <div v-if="hasReviews(agent)" class="flex items-center gap-1 text-xs text-zinc-500">
           <MessageSquare :size="12" />
           <span>{{ agent.peerReviewsReceived.length }} 条评审</span>
+        </div>
+
+        <!-- User Comment Input -->
+        <div class="mt-3 pt-3 border-t border-zinc-700">
+          <div class="flex items-center gap-1 text-xs text-zinc-400 mb-2">
+            <MessageCircle :size="12" />
+            <span>添加您的评论</span>
+          </div>
+          <div class="flex gap-2">
+            <input
+              v-model="commentInputs[agent.id]"
+              type="text"
+              :placeholder="`评价 ${agent.id} 的结果...`"
+              class="flex-1 bg-zinc-900 border border-zinc-700 rounded px-3 py-2 text-xs text-white placeholder-zinc-500 focus:outline-none focus:border-blue-500 transition-colors"
+              @keyup.enter="submitComment(agent.id)"
+            />
+            <button
+              @click="submitComment(agent.id)"
+              :disabled="!commentInputs[agent.id]?.trim()"
+              class="px-3 py-2 bg-blue-600 hover:bg-blue-700 disabled:bg-zinc-700 disabled:text-zinc-500 text-white rounded text-xs font-medium transition-colors"
+            >
+              发送
+            </button>
+          </div>
         </div>
 
         <!-- Winner Badge -->

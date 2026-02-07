@@ -118,15 +118,16 @@ export interface PeerReview {
   id: string;
   reviewerId: string; // Agent who wrote the review
   targetId: string; // Agent being reviewed
-  scores: {
+  scores?: {
     quality: number; // 1-10
     completeness: number; // 1-10
     creativity: number; // 1-10
     accuracy: number; // 1-10
   };
-  overallScore: number; // Weighted average
+  overallScore?: number; // Weighted average
   comments: string; // Review comments
   timestamp: number;
+  isUserComment?: boolean; // True if this is a user comment
 }
 
 // Evaluation result for an agent

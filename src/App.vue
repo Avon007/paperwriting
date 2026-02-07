@@ -124,6 +124,42 @@ const handleReset = () => {
   }
 };
 
+// Handle user comment on agent result
+const handleAddComment = (agentId: string, comment: string) => {
+  // Add user's comment to chat
+  addUserMessage(`💬 对 ${agentId} 的评论: ${comment}`);
+
+  // Get the agent instance
+  const agent = agentInstances.value.find(a => a.id === agentId);
+
+  if (agent) {
+    // Add comment as a user review to the agent
+    const userComment = {
+      id: `user-${agentId}-${Date.now()}`,
+      reviewerId: 'USER',
+      targetId: agentId,
+      comments: comment,
+      timestamp: Date.now(),
+      isUserComment: true
+    };
+
+    // Add to agent's received reviews
+    agent.peerReviewsReceived.push(userComment);
+
+    // Find the agent's specialization if any
+    const specInfo = agent.specialization ? ` (${agent.specialization})` : '';
+
+    // Add bot response acknowledging the comment
+    addBotMessage(
+      `✅ 已记录您对 ${agentId}${specInfo} 的评论：\n\n"${comment}"\n\n` +
+      `当前 ${agentId} 评分：${agent.score.toFixed(2)}\n` +
+      `获得评审：${agent.peerReviewsReceived.length} 条（包含您的评论）`
+    );
+  } else {
+    addBotMessage(`✅ 已记录您对 ${agentId} 的评论。`);
+  }
+};
+
 // Handle layout resize
 const startResizeLayout = () => startResize('layout-width');
 
@@ -197,6 +233,7 @@ watch(activeTarget, (newTarget) => {
               :evaluations="evaluationResults"
               :role="currentMultiAgentRole"
               @select-result="(agentId) => console.log('Selected result:', agentId)"
+              @add-comment="handleAddComment"
             />
 
             <!-- Agent Conversation Panel -->
